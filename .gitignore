@@ -1,0 +1,23 @@
+# API keys and environment variables
+.env
+*.env
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# ADK local files
+.adk/
+*.db
+
+# VS Code
+.vscode/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
