@@ -23,6 +23,11 @@ The goal of the project was to experiment with building a simple AI agent using 
   - Acrostic poems
 - Supports custom poem lengths
 - Automatically generates a suitable title
+- Reviews and refines each draft before returning the final poem
+
+The text pipeline exposes only the refiner's response. Drafts and feedback
+remain in session state for the following stages and can still be inspected
+in ADK's developer tools. Requests for no title are preserved during refinement.
 
 ## Tech Stack
 
@@ -72,6 +77,8 @@ Windows:
 pip install -r requirements.txt
 ```
 
+The project pins Google ADK to version 1.28.0 for the sequential pipeline API.
+
 ### 5. Configure Google ADK
 
 Configure your Gemini API credentials according to the Google ADK setup instructions.
@@ -96,6 +103,18 @@ Write a haiku about rain.
 Write an acrostic poem using the word AI.
 ```
 
+## Tests
+
+With the virtual environment activated, run:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+These tests use simulated model responses with the real ADK runner to verify
+state handoff and final-only output, including streaming. They require no API
+key. Actual Gemini poetry quality and instruction adherence require a live run.
+
 ## Contributors
 
 This project was developed collaboratively during the **Build with AI Sri Lanka 2026 Buildathon**.
@@ -111,7 +130,6 @@ The event provided an opportunity to explore AI development and build practical 
 
 ## Future Improvements
 
-- Add a poem review and refinement agent
 - Improve input validation
 - Add structured controls for poem preferences
 - Add a simple custom user interface
