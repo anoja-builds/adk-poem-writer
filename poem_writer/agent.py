@@ -1,59 +1,139 @@
-from google.adk.agents import Agent
+from collections.abc import AsyncGenerator
+
+from google.adk.agents.invocation_context import InvocationContext
+from google.adk.agents.llm_agent import LlmAgent
+from google.adk.agents.sequential_agent import SequentialAgent
+from google.adk.events import Event
 
 
-root_agent = Agent(
-    name="poem_writer",
-    model="gemini-3.5-flash",
-    description=(
-        "A creative AI agent that writes original poems based on "
-        "the user's topic, language, style, mood, and length."
-    ),
+MODEL = "gemini-3.5-flash"
+
+
+class FinalPoemPipeline(SequentialAgent):
+    """Keep intermediate state updates without displaying draft/review text."""
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        async for event in super()._run_async_impl(ctx):
+            if event.author in {"PoemWriterAgent", "PoemReviewerAgent"}:
+                # The runner must still receive actions (including output_key
+                # state updates) before the next agent reads its instruction.
+                event = event.model_copy(update={"content": None})
+            yield event
+
+
+# 1. Poem Writer
+poem_writer_agent = LlmAgent(
+    name="PoemWriterAgent",
+    model=MODEL,
+    description="Creates an original poem based on the user's requirements.",
     instruction="""
-You are a dedicated poem-writing agent.
+You are a creative poem-writing agent.
 
-Your responsibility is to create original poems based on the user's request.
+Create an original poem based on the user's request.
 
-Follow these rules:
+Follow the user's requirements for:
+- topic
+- language
+- mood
+- poetic format
+- length
+- rhyme, when requested
 
-1. Write original poems and do not copy existing poems, published poetry,
-   song lyrics, or famous verses.
+Supported formats may include:
+- free verse
+- rhyming poem
+- haiku
+- sonnet
+- acrostic poem
+- custom line or stanza counts
 
-2. Follow the language requested by the user. You can write in English,
-   Tamil, Sinhala, or another language supported by the model.
+Give the poem an appropriate title unless the user asks for no title.
 
-3. Follow the requested mood, such as:
-   - romantic
-   - sad
-   - motivational
-   - nostalgic
-   - peaceful
-   - humorous
-   - inspirational
+Do not copy existing poems, song lyrics, famous verses, or published poetry.
 
-4. Follow the requested poetic format, such as:
-   - free verse
-   - rhyming poem
-   - haiku
-   - sonnet
-   - acrostic poem
-   - four-line poem
-   - four-stanza poem
-
-5. Follow the requested length and number of lines or stanzas.
-
-6. When the user does not specify a format, write a concise free-verse poem.
-
-7. Give the poem an appropriate title unless the user requests no title.
-
-8. Output only the title and poem unless the user asks for an explanation.
-
-9. Do not explain how the poem was generated unless requested.
-
-10. Do not falsely claim that a poem was written by a famous poet.
-
-11. When the user's requirements conflict, prioritize:
-    language, poem format, length, mood, and then rhyme.
-
-12. Keep the language natural and emotionally appropriate.
+Output only the title and poem.
 """,
+    output_key="draft_poem",
+)
+
+
+# 2. Poem Reviewer
+poem_reviewer_agent = LlmAgent(
+    name="PoemReviewerAgent",
+    model=MODEL,
+    description="Reviews the generated poem against the user's request.",
+    instruction="""
+You are a poetry reviewer.
+
+Review the following draft poem:
+
+{draft_poem}
+
+Evaluate whether the poem:
+
+1. Matches the user's requested topic.
+2. Uses the requested language.
+3. Matches the requested mood.
+4. Follows the requested poem format.
+5. Follows the requested length.
+6. Uses rhyme correctly when requested.
+7. Sounds natural and coherent.
+8. Appears original.
+
+Provide concise feedback describing only changes that are actually needed.
+
+If the poem already satisfies the request well, respond with:
+
+No major changes needed.
+""",
+    output_key="review_feedback",
+)
+
+
+# 3. Poem Refiner
+poem_refiner_agent = LlmAgent(
+    name="PoemRefinerAgent",
+    model=MODEL,
+    description="Produces the final poem using the draft and review feedback.",
+    instruction="""
+You are a poem refinement agent.
+
+Original draft:
+
+{draft_poem}
+
+Reviewer feedback:
+
+{review_feedback}
+
+Create the final version of the poem.
+
+Apply useful reviewer feedback while preserving the user's original request.
+
+If the reviewer says "No major changes needed.", keep the original poem
+unless a very small correction is necessary.
+
+Output only the final poem and its title, unless the user asks for no title.
+When the user asks for no title, output only the poem without a title.
+
+Do not include review comments, explanations, or notes.
+""",
+    output_key="final_poem",
+)
+
+
+# Run the agents in order:
+# Writer -> Reviewer -> Refiner
+root_agent = FinalPoemPipeline(
+    name="PoemWritingPipeline",
+    sub_agents=[
+        poem_writer_agent,
+        poem_reviewer_agent,
+        poem_refiner_agent,
+    ],
+    description=(
+        "Creates, reviews, and refines poems based on user requirements."
+    ),
 )
